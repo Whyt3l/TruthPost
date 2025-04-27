@@ -21,14 +21,14 @@
 ;; Data maps
 (define-map users
   { user-id: principal }
-  { username: (string-utf8 50), reputation: uint, tokens: uint, verified: bool }
+  { username: (string-ascii 50), reputation: uint, tokens: uint, verified: bool }
 )
 
 (define-map posts
   { post-id: uint }
   { 
     author: principal, 
-    content: (string-utf8 500), 
+    content: (string-ascii 500), 
     content-hash: (buff 32),
     timestamp: uint, 
     verified: bool,
@@ -46,7 +46,7 @@
 
 (define-map post-engagements
   { post-id: uint, user: principal }
-  { engaged: bool, engagement-type: (string-utf8 10) }
+  { engaged: bool, engagement-type: (string-ascii 10) }
 )
 
 (define-map post-ratings
@@ -59,7 +59,7 @@
 (define-data-var action-counter uint u0)
 
 ;; User functions
-(define-public (register-user (username (string-utf8 50)))
+(define-public (register-user (username (string-ascii 50)))
   (let ((caller tx-sender))
     ;; Validate username is not empty
     (asserts! (> (len username) u0) ERR_EMPTY_STRING)
@@ -72,7 +72,7 @@
   )
 )
 
-(define-public (update-username (username (string-utf8 50)))
+(define-public (update-username (username (string-ascii 50)))
   (let ((caller tx-sender))
     ;; Validate username is not empty
     (asserts! (> (len username) u0) ERR_EMPTY_STRING)
@@ -87,7 +87,7 @@
 )
 
 ;; Post functions
-(define-public (create-post (content (string-utf8 500)) (content-hash (buff 32)))
+(define-public (create-post (content (string-ascii 500)) (content-hash (buff 32)))
   (let ((caller tx-sender)
         (post-id (var-get next-post-id)))
     ;; Validate content is not empty
@@ -169,7 +169,7 @@
   )
 )
 
-(define-public (engage-with-post (post-id uint) (engagement-type (string-utf8 10)))
+(define-public (engage-with-post (post-id uint) (engagement-type (string-ascii 10)))
   (let ((caller tx-sender))
     ;; Check if user exists
     (asserts! (is-some (map-get? users {user-id: caller})) ERR_NOT_FOUND)
