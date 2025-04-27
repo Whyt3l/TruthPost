@@ -11,6 +11,8 @@
 (define-constant ERR_SELF_RATING (err u106))
 (define-constant ERR_EMPTY_STRING (err u107))
 (define-constant ERR_INVALID_RATING (err u108))
+(define-constant ERR_INVALID_POST_ID (err u109))
+(define-constant ERR_EMPTY_HASH (err u110))
 
 ;; Constants
 (define-constant MAX_RATING u5)
@@ -58,6 +60,11 @@
 (define-data-var next-post-id uint u1)
 (define-data-var action-counter uint u0)
 
+;; Helper functions
+(define-private (is-valid-post-id (post-id uint))
+  (< post-id (var-get next-post-id))
+)
+
 ;; User functions
 (define-public (register-user (username (string-ascii 50)))
   (let ((caller tx-sender))
@@ -92,11 +99,14 @@
         (post-id (var-get next-post-id)))
     ;; Validate content is not empty
     (asserts! (> (len content) u0) ERR_EMPTY_STRING)
+    ;; Validate content-hash is not empty
+    (asserts! (> (len content-hash) u0) ERR_EMPTY_HASH)
     ;; Check if user exists
     (asserts! (is-some (map-get? users {user-id: caller})) ERR_NOT_FOUND)
     ;; Increment action counter
     (var-set action-counter (+ (var-get action-counter) u1))
-    ;; Create post
+    
+    ;; Create post with validated data
     (map-set posts 
       {post-id: post-id} 
       { 
@@ -118,10 +128,13 @@
 
 (define-public (verify-post (post-id uint))
   (let ((caller tx-sender))
+    ;; Validate post-id
+    (asserts! (is-valid-post-id post-id) ERR_INVALID_POST_ID)
     ;; Check if user exists
     (asserts! (is-some (map-get? users {user-id: caller})) ERR_NOT_FOUND)
     ;; Check if post exists
     (asserts! (is-some (map-get? posts {post-id: post-id})) ERR_NOT_FOUND)
+    
     ;; Get post data
     (let ((post (unwrap! (map-get? posts {post-id: post-id}) ERR_NOT_FOUND)))
       ;; Check if user is not the author
@@ -129,15 +142,17 @@
       ;; Check if user has not already verified this post
       (asserts! (is-none (map-get? post-verifications {post-id: post-id, verifier: caller})) ERR_ALREADY_VERIFIED)
       
-      ;; Record verification
-      (map-set post-verifications {post-id: post-id, verifier: caller} {verified: true})
+      ;; Record verification with validated post-id
+      (map-set post-verifications 
+        {post-id: post-id, verifier: caller} 
+        {verified: true})
       
       ;; Update post verification count
       (let ((new-verification-count (+ (get verification-count post) u1))
             (author-user (unwrap! (map-get? users {user-id: (get author post)}) ERR_NOT_FOUND))
             (verifier-user (unwrap! (map-get? users {user-id: caller}) ERR_NOT_FOUND)))
         
-        ;; Update post data
+        ;; Update post data with validated post-id
         (map-set posts 
           {post-id: post-id} 
           (merge post {
@@ -171,29 +186,33 @@
 
 (define-public (engage-with-post (post-id uint) (engagement-type (string-ascii 10)))
   (let ((caller tx-sender))
-    ;; Check if user exists
-    (asserts! (is-some (map-get? users {user-id: caller})) ERR_NOT_FOUND)
-    ;; Check if post exists
-    (asserts! (is-some (map-get? posts {post-id: post-id})) ERR_NOT_FOUND)
+    ;; Validate post-id
+    (asserts! (is-valid-post-id post-id) ERR_INVALID_POST_ID)
     ;; Validate engagement type (like, share, comment)
     (asserts! (or (is-eq engagement-type "like") 
                  (is-eq engagement-type "share") 
                  (is-eq engagement-type "comment")) 
              ERR_INVALID_INPUT)
+    ;; Check if user exists
+    (asserts! (is-some (map-get? users {user-id: caller})) ERR_NOT_FOUND)
+    ;; Check if post exists
+    (asserts! (is-some (map-get? posts {post-id: post-id})) ERR_NOT_FOUND)
     
     ;; Get post data
     (let ((post (unwrap! (map-get? posts {post-id: post-id}) ERR_NOT_FOUND)))
       ;; Check if user has not already engaged with this post
       (asserts! (is-none (map-get? post-engagements {post-id: post-id, user: caller})) ERR_ALREADY_EXISTS)
       
-      ;; Record engagement
-      (map-set post-engagements {post-id: post-id, user: caller} {engaged: true, engagement-type: engagement-type})
+      ;; Record engagement with validated post-id
+      (map-set post-engagements 
+        {post-id: post-id, user: caller} 
+        {engaged: true, engagement-type: engagement-type})
       
       ;; Update post engagement count
       (let ((new-engagement-count (+ (get engagement-count post) u1))
             (author-user (unwrap! (map-get? users {user-id: (get author post)}) ERR_NOT_FOUND)))
         
-        ;; Update post data
+        ;; Update post data with validated post-id
         (map-set posts 
           {post-id: post-id} 
           (merge post {engagement-count: new-engagement-count}))
@@ -213,12 +232,14 @@
 
 (define-public (rate-post-accuracy (post-id uint) (rating uint))
   (let ((caller tx-sender))
+    ;; Validate post-id
+    (asserts! (is-valid-post-id post-id) ERR_INVALID_POST_ID)
+    ;; Validate rating (1-5)
+    (asserts! (and (>= rating u1) (<= rating MAX_RATING)) ERR_INVALID_RATING)
     ;; Check if user exists
     (asserts! (is-some (map-get? users {user-id: caller})) ERR_NOT_FOUND)
     ;; Check if post exists
     (asserts! (is-some (map-get? posts {post-id: post-id})) ERR_NOT_FOUND)
-    ;; Validate rating (1-5)
-    (asserts! (and (>= rating u1) (<= rating MAX_RATING)) ERR_INVALID_RATING)
     
     ;; Get post data
     (let ((post (unwrap! (map-get? posts {post-id: post-id}) ERR_NOT_FOUND)))
@@ -227,8 +248,10 @@
       ;; Check if user has not already rated this post
       (asserts! (is-none (map-get? post-ratings {post-id: post-id, rater: caller})) ERR_ALREADY_RATED)
       
-      ;; Record rating
-      (map-set post-ratings {post-id: post-id, rater: caller} {rating: rating})
+      ;; Record rating with validated post-id and rating
+      (map-set post-ratings 
+        {post-id: post-id, rater: caller} 
+        {rating: rating})
       
       ;; Update post rating
       (let ((current-total-rating (* (get accuracy-rating post) (get rating-count post)))
@@ -238,7 +261,7 @@
             (author-user (unwrap! (map-get? users {user-id: (get author post)}) ERR_NOT_FOUND))
             (rater-user (unwrap! (map-get? users {user-id: caller}) ERR_NOT_FOUND)))
         
-        ;; Update post data
+        ;; Update post data with validated post-id
         (map-set posts 
           {post-id: post-id} 
           (merge post {
